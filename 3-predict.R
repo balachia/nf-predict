@@ -20,9 +20,10 @@ qi <- readMM.dense('all-nf.mm_V.mm')
 bu <- readMM.dense('all-nf.mm_U_bias.mm')
 pwu <- readMM.dense('all-nf.mm_U.mm')
 
-ratings <- readRDS('ratings.Rds')
+ratings <- readRDS('../../ratings.Rds')
 idxi <- ratings[, movie_id]
 idxu <- ratings[, user_idx]
+nratings <- nrow(ratings)
 rm(ratings); gc()
 
 # drop last column and reformat
@@ -33,13 +34,16 @@ pwu <- pwu[,1:d] + pwu[,1:d + d]
 nu <- nrow(bu)
 ni <- nrow(bi)
 
+cat('\n')
 # test predictions
-res <- lapply(1:nrow(ratings), function (i) {
+res <- sapply(1:(nratings/1), function (i) {
 #     res <- mu + bi[i] + bu + crossprod(qi[i,], pwu)
     res <- mu + bi[idxi[i]] + bu[idxu[i]] + (pwu[idxu[i],] %*% qi[idxi[i],])
 #     res <- mu + bi[i] + bu + (pwu %*% qi[i,])
 #     res <- c(min(res), mean(res), median(res), max(res))
-    if(i %% 1000 == 0) print(c(i, res))
+    #if(i %% 1000 == 0) print(c(i, res))
+    if(i %% 10000 == 0) cat(sprintf('\r%6.2f %%', 100 * i/nratings))
     res
 })
+cat('\n')
 
