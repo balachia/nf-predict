@@ -12,7 +12,7 @@ con <- dbConnect(MySQL(), user='netflix-read', dbname='netflix')
 #ratings <- fetch(ratings, -1)
 
 # takes a bit of time -- up to 8 mins?
-system.time(ratings <- dbGetQuery(con, 'SELECT user_id, movie_id, rating FROM ratings'))
+system.time(ratings <- dbGetQuery(con, 'SELECT user_id, movie_id, rating, rating_date FROM ratings'))
 system.time(ratings <- as.data.table(ratings))
 gc()
 
