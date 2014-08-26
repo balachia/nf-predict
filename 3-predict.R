@@ -2,6 +2,9 @@ library(Matrix)
 library(data.table)
 library(parallel)
 
+# have months 11:84 available
+# so need to predict 12:84 from 11:83
+
 rm(list=ls())
 options(max.print=5000)
 
@@ -10,80 +13,164 @@ readMM.dense <- function(fin, skip=3, ...) {
     as.matrix(dt)
 }
 
-d <- 100
+setwd('~/Data/nf-raw/svdpp/')
 
-setwd(paste0('~/Data/nf-raw/svdpp/out/', d))
+d <- 50
+ratings <- readRDS('ratings.Rds')
+ratings[, user_idx := NULL]
+valid.movies <- fread('valid_movies_2014.csv')
+setnames(valid.movies, names(valid.movies), 'movie_id')
+setkey(valid.movies, movie_id)
 
-# load data
-mu <- readMM.dense('all-nf.mm_global_mean.mm')
-bi <- readMM.dense('all-nf.mm_V_bias.mm')
-qi <- readMM.dense('all-nf.mm_V.mm')
-bu <- readMM.dense('all-nf.mm_U_bias.mm')
-pwu <- readMM.dense('all-nf.mm_U.mm')
+types <- factor(c('um', 'u0', '0m', '00'))
 
-ratings <- readRDS('../../ratings.Rds')
-idxi <- ratings[, movie_id]
-idxu <- ratings[, user_idx]
-nratings <- nrow(ratings)
-# rm(ratings); gc()
+resdts <- mclapply(12:84, mc.cores=20, function(ipred) {
+    cat(ipred, 'start\n')
+    ptm <- proc.time()
 
-# drop last column and reformat
-mu <- mu[1]
-qi <- qi[,1:d]
-pwu <- pwu[,1:d] + pwu[,1:d + d]
+    i <- ipred - 1
+    subr <- ratings[rating_date == ipred]
 
-nu <- nrow(bu)
-ni <- nrow(bi)
+    umap <- readRDS(paste0('mapping/user-',i,'.Rds'))
+    mmap <- readRDS(paste0('mapping/movie-',i,'.Rds'))
+
+    setkey(subr, user_id)
+    setkey(umap, user_id)
+    subr <- merge(subr, umap, all.x=TRUE)
+
+    setkey(subr, movie_id)
+    setkey(mmap, movie_id)
+    subr <- merge(subr, mmap, all.x=TRUE)
+
+    # load data
+    mu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_global_mean.mm'))
+    bi <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_V_bias.mm'))
+    qi <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_V.mm'))
+    bu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_U_bias.mm'))
+    pwu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_U.mm'))
+
+    # drop last column and reformat
+    mu <- mu[1]
+    qi <- qi[,1:d]
+    pwu <- pwu[,1:d] + pwu[,1:d + d]
+
+    subr[, predicted := as.numeric(NA)]
+    idx.um <- which(subr[, !is.na(user_idx) & !is.na(movie_idx)])
+    idx.u0 <- which(subr[, !is.na(user_idx) & is.na(movie_idx)])
+    idx.0m <- which(subr[, is.na(user_idx) & !is.na(movie_idx)])
+    idx.00 <- which(subr[, is.na(user_idx) & is.na(movie_idx)])
+
+    # user and movie
+    if(length(idx.um) > 0) {
+        subr[idx.um, 
+             `:=`(predicted = mu + bi[movie_idx] + bu[user_idx] + rowSums(pwu[user_idx,] * qi[movie_idx,]),
+                  type=types[1])]
+    }
+    # user, no movie
+    if(length(idx.u0) > 0) {
+        subr[idx.u0, 
+             `:=`(predicted = mu + bu[user_idx],
+                  type=types[2])]
+    }
+    # movie, no user
+    if(length(idx.0m) > 0) {
+        subr[idx.0m, 
+             `:=`(predicted = mu + bi[movie_idx],
+                  type=types[3])]
+    }
+    # no user, no movie
+    if(length(idx.00) > 0) {
+        subr[idx.00, 
+             `:=`(predicted = mu,
+                  type=types[4])]
+    }
+
+    cat(ipred, 'done (', proc.time()[3] - ptm[3] ,')\n')
+
+    subr[, list(movie_id, user_id, predicted, type)]
+})
+
+resdt <- rbindlist(resdts)
+setkey(resdt, movie_id)
+
+# save predictions
+saveRDS(resdt, paste0('out/', d, '/predicted.Rds'), compress=FALSE)
+saveRDS(resdt[valid.movies], paste0('out/', d, '/valid_predicted.Rds'), compress=FALSE)
+
+write.csv(resdt[valid.movies], paste0('out/', d, '/valid_predicted.csv'))
+
+# setwd(paste0('~/Data/nf-raw/svdpp/out/', d))
+# 
+# # load data
+# mu <- readMM.dense('all-nf.mm_global_mean.mm')
+# bi <- readMM.dense('all-nf.mm_V_bias.mm')
+# qi <- readMM.dense('all-nf.mm_V.mm')
+# bu <- readMM.dense('all-nf.mm_U_bias.mm')
+# pwu <- readMM.dense('all-nf.mm_U.mm')
+# 
+# ratings <- readRDS('../../ratings.Rds')
+# idxi <- ratings[, movie_id]
+# idxu <- ratings[, user_idx]
+# nratings <- nrow(ratings)
+# # rm(ratings); gc()
+# 
+# # drop last column and reformat
+# mu <- mu[1]
+# qi <- qi[,1:d]
+# pwu <- pwu[,1:d] + pwu[,1:d + d]
+# 
+# nu <- nrow(bu)
+# ni <- nrow(bi)
 
 # generate predictions
 #system.time(ratings[, predicted := mu + bi[movie_id] + bu[user_idx] + rowSums(pwu[user_idx,] * qi[movie_id,])])
 
 # nratings <- floor(nrow(ratings) / 10)
 
-chunk_size <- 1e4
-chunks <- lapply(1:ceiling(nratings / chunk_size), function(i) {
-    offset <- (i-1) * chunk_size
-    (1 + offset) : min(chunk_size + offset, nratings)
-})
-
-cat('\n')
-# res <- local({
-f <- fifo(tempfile(), open='w+b', blocking=FALSE)
-res <- mclapply(c(list(NULL),chunks), mc.cores=10, function(chunk) {
-    if(is.null(chunk)) {
-        done <- 0
-        #test <- rep(TRUE, length(chunks))
-        while(done < nratings && !isIncomplete(f)) {
-            msg <- readBin(f, 'double')
-#             if(msg != chunk_size && msg != (nratings %% chunk_size)) msg <- 0
-#             chunkn <- ceiling(msg / chunk_size)
-            done <- done + msg
-#             done <- done + (if(msg %% chunk_size == 0) chunk_size else msg %% chunk_size)
-            cat(sprintf('\r%7.3f %%', 100 * done / nratings))
-#             cat(chunkn,done, (chunkn * chunk_size) / done,  '\n')
-            #test[chunkn] <- FALSE
-            #if(sum(test) < 50) print(which(test)) else print('>50')
-        }
-        NULL
-    } else {
-        res <- ratings[chunk, mu + bi[movie_id] + bu[user_idx] + rowSums(pwu[user_idx,] * qi[movie_id,])]
-        writeBin(as.numeric(length(chunk)), f)
-#         writeBin(as.numeric(max(chunk)), f)
-#         cat(sprintf('\r%7.3f %%', 100 * max(chunk) / nratings))
-        res
-    }
-})
-close(f)
-# res
+# chunk_size <- 1e4
+# chunks <- lapply(1:ceiling(nratings / chunk_size), function(i) {
+#     offset <- (i-1) * chunk_size
+#     (1 + offset) : min(chunk_size + offset, nratings)
 # })
-cat('\n')
+# 
+# cat('\n')
+# # res <- local({
+# f <- fifo(tempfile(), open='w+b', blocking=FALSE)
+# res <- mclapply(c(list(NULL),chunks), mc.cores=10, function(chunk) {
+#     if(is.null(chunk)) {
+#         done <- 0
+#         #test <- rep(TRUE, length(chunks))
+#         while(done < nratings && !isIncomplete(f)) {
+#             msg <- readBin(f, 'double')
+# #             if(msg != chunk_size && msg != (nratings %% chunk_size)) msg <- 0
+# #             chunkn <- ceiling(msg / chunk_size)
+#             done <- done + msg
+# #             done <- done + (if(msg %% chunk_size == 0) chunk_size else msg %% chunk_size)
+#             cat(sprintf('\r%7.3f %%', 100 * done / nratings))
+# #             cat(chunkn,done, (chunkn * chunk_size) / done,  '\n')
+#             #test[chunkn] <- FALSE
+#             #if(sum(test) < 50) print(which(test)) else print('>50')
+#         }
+#         NULL
+#     } else {
+#         res <- ratings[chunk, mu + bi[movie_id] + bu[user_idx] + rowSums(pwu[user_idx,] * qi[movie_id,])]
+#         writeBin(as.numeric(length(chunk)), f)
+# #         writeBin(as.numeric(max(chunk)), f)
+# #         cat(sprintf('\r%7.3f %%', 100 * max(chunk) / nratings))
+#         res
+#     }
+# })
+# close(f)
+# # res
+# # })
+# cat('\n')
 
-res <- do.call(c, res)
-ratings[, predicted := res]
-ratings[, user_idx := NULL]
+# res <- do.call(c, res)
+# ratings[, predicted := res]
+# ratings[, user_idx := NULL]
 
-saveRDS(ratings, paste0('ratings',d,'.Rds'))
-write.csv(ratings, paste0('ratings',d,'.csv'))
+# saveRDS(ratings, paste0('ratings',d,'.Rds'))
+# write.csv(ratings, paste0('ratings',d,'.csv'))
 
 # cat('\n')
 # # test predictions
