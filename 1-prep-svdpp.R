@@ -16,19 +16,23 @@ system.time(ratings <- dbGetQuery(con, 'SELECT user_id, movie_id, rating, rating
 system.time(ratings <- as.data.table(ratings))
 gc()
 
+# generate dates
+system.time(dates <- strptime(ratings[, rating_date], format='%Y-%m-%d'))
+system.time(ratings[, rating_date := 12 * (year(dates) - min(year(dates))) + month(dates)])
+
 # generate user index
 system.time(ratings[, user_idx := .GRP, by=user_id])
 gc()
 
-system.time(saveRDS(ratings, 'ratings.Rds'))
+system.time(saveRDS(ratings, 'ratings.Rds', compress=FALSE))
 # write out user id mapping
 system.time(write.csv(ratings[, min(user_id), by=user_idx], 'user-mapping.csv'))
 
-system.time(ratingsMM <- sparseMatrix(i=ratings$user_idx, j=ratings$movie_id, x=ratings$rating))
-rm(ratings)
-gc()
-
-system.time(writeMM(ratingsMM, 'all-nf.mm'))
-rm(ratingsMM)
-gc()
+# system.time(ratingsMM <- sparseMatrix(i=ratings$user_idx, j=ratings$movie_id, x=ratings$rating))
+# rm(ratings)
+# gc()
+# 
+# system.time(writeMM(ratingsMM, 'all-nf.mm'))
+# rm(ratingsMM)
+# gc()
 
