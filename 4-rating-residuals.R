@@ -1,5 +1,7 @@
 library(data.table)
 library(Rcpp)
+library(ggplot2)
+library(reshape2)
 
 setwd('~/Data/nf-raw/svdpp')
 
@@ -69,6 +71,46 @@ dt[is.na(same_movie_previous_block), same_movie_previous_block := FALSE]
 dt[, resid_var := welford_variance_cpp(residual), by=movie_id]
 dt[, last_resid_var := resid_var[md_previous_block]]
 dt[(!same_movie_previous_block), last_resid_var := Inf]
+
+# RMSE thresholds
+# get curves for rmse over existing # of ratings...
+# at what point does the predictor become acceptable
+setkey(dt, user_rating_count, movie_rating_count)
+rmse.by.ucount <- dt[, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N),
+                     by=user_rating_count]
+rmse.by.mcount <- dt[, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N),
+                     by=movie_rating_count]
+
+max.rmse.by.ucount <- rmse.by.ucount[is.finite(rmse), max(rmse)]
+max.rmse.by.mcount <- rmse.by.mcount[is.finite(rmse), max(rmse)]
+
+rmse.by.ucount[, cumratings := (sum(nratings) - cumsum(nratings) + nratings) * (max.rmse.by.ucount / sum(nratings))]
+rmse.by.mcount[, cumratings := (sum(nratings) - cumsum(nratings) + nratings) * (max.rmse.by.mcount / sum(nratings))]
+
+mrmse.by.ucount <- melt(rmse.by.ucount, id.vars=c('user_rating_count', 'nratings'))
+mrmse.by.mcount <- melt(rmse.by.mcount, id.vars=c('movie_rating_count', 'nratings'))
+
+# txtplot symbols
+mrmse.by.ucount[, pch := ifelse(variable == 'rmse', 'x', 'o')]
+mrmse.by.mcount[, pch := ifelse(variable == 'rmse', 'x', 'o')]
+
+with(mrmse.by.ucount[is.finite(value)], txtplot(user_rating_count, value, pch=pch))
+with(mrmse.by.mcount[is.finite(value)], txtplot(movie_rating_count, value, pch=pch))
+
+saveRDS(rmse.by.ucount, paste0('out/',d,'/rmse-by-user-rating-count.Rds'))
+saveRDS(rmse.by.mcount, paste0('out/',d,'/rmse-by-movie-rating-count.Rds'))
+
+# this does not work, too slow
+# system.time(
+# rmse.by.umcount <- dt[1:3e7, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N),
+#                       by=list(user_rating_count, movie_rating_count)]
+# )
+# but let's try a hack-ass way
+# system.time(dt[, last_of_block := 1:.N == .N, by=list(user_rating_count, movie_rating_count)])
+# system.time(dt[, first_of_block := 1:.N == 1, by=list(user_rating_count, movie_rating_count)])
+# dt[!is.na(residual), mse := cumsum(residual ^ 2)]
+
+
 
 # dt[, resid_sum := cumsum(residual), by=movie_id]
 # dt[, nratings := 1:.N, by=movie_id]
