@@ -97,7 +97,36 @@ setkey(resdt, movie_id)
 saveRDS(resdt, paste0('out/', d, '/predicted.Rds'), compress=FALSE)
 saveRDS(resdt[valid.movies], paste0('out/', d, '/valid_predicted.Rds'), compress=FALSE)
 
-write.csv(resdt[valid.movies], paste0('out/', d, '/valid_predicted.csv'))
+# valid.predict <- as.matrix(resdt[valid.movies])
+valid.predict <- resdt[valid.movies]
+nvalid <- nrow(valid.predict)
+
+chunk_size <- 1e5
+chunks <- lapply(1:ceiling(nvalid / chunk_size), function(i) {
+    offset <- (i-1) * chunk_size
+    (1 + offset) : min(chunk_size + offset, nvalid)
+})
+
+ptm <- proc.time()
+for (i in seq_along(chunks)) {
+    chunk <- chunks[[i]]
+
+    if(i == 1) {
+        write.table(valid.predict[chunk,], paste0('out/', d, '/valid_predicted.csv'),
+                    sep=',', row.names=FALSE)
+    } else {
+        write.table(valid.predict[chunk,], paste0('out/', d, '/valid_predicted.csv'),
+                    sep=',', row.names=FALSE, col.names=FALSE, append=TRUE)
+    }
+    
+    cat('\r', rep(' ', 50))
+    done <- i / length(chunks)
+    total <- (proc.time()[3] - ptm[3]) / done
+    cat('\r', i, '/', length(chunks), '::', min(chunk), '-', max(chunk), '(', total, ')')
+}
+cat('\n')
+
+# write.csv(as.matrix(resdt[valid.movies]), paste0('out/', d, '/valid_predicted.csv'))
 
 # setwd(paste0('~/Data/nf-raw/svdpp/out/', d))
 # 
