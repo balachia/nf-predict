@@ -81,6 +81,9 @@ rmse.by.ucount <- dt[, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N)
 rmse.by.mcount <- dt[, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N),
                      by=movie_rating_count]
 
+saveRDS(rmse.by.ucount, paste0('out/',d,'/rsync/rmse-by-user-rating-count.Rds'))
+saveRDS(rmse.by.mcount, paste0('out/',d,'/rsync/rmse-by-movie-rating-count.Rds'))
+
 max.rmse.by.ucount <- rmse.by.ucount[is.finite(rmse), max(rmse)]
 max.rmse.by.mcount <- rmse.by.mcount[is.finite(rmse), max(rmse)]
 
@@ -96,9 +99,6 @@ mrmse.by.mcount[, pch := ifelse(variable == 'rmse', 'x', 'o')]
 
 with(mrmse.by.ucount[is.finite(value)], txtplot(user_rating_count, value, pch=pch))
 with(mrmse.by.mcount[is.finite(value)], txtplot(movie_rating_count, value, pch=pch))
-
-saveRDS(rmse.by.ucount, paste0('out/',d,'/rmse-by-user-rating-count.Rds'))
-saveRDS(rmse.by.mcount, paste0('out/',d,'/rmse-by-movie-rating-count.Rds'))
 
 # this does not work, too slow
 # system.time(
