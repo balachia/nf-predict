@@ -76,9 +76,9 @@ dt[(!same_movie_previous_block), last_resid_var := Inf]
 # get curves for rmse over existing # of ratings...
 # at what point does the predictor become acceptable
 setkey(dt, user_rating_count, movie_rating_count)
-rmse.by.ucount <- dt[, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N),
+rmse.by.ucount <- dt[, list(rmse = sqrt(sum(residual^2, na.rm=TRUE) / sum(!is.na(residual))), nratings=sum(!is.na(residual))),
                      by=user_rating_count]
-rmse.by.mcount <- dt[, list(rmse = sqrt(sum(residual, na.rm=TRUE)), nratings=.N),
+rmse.by.mcount <- dt[, list(rmse = sqrt(sum(residual^2, na.rm=TRUE) / sum(!is.na(residual))), nratings=sum(!is.na(residual))),
                      by=movie_rating_count]
 
 saveRDS(rmse.by.ucount, paste0('out/',d,'/rsync/rmse-by-user-rating-count.Rds'))
