@@ -2,6 +2,7 @@ library(data.table)
 library(Rcpp)
 library(ggplot2)
 library(reshape2)
+library(foreign)
 
 setwd('~/Data/nf-raw/svdpp')
 
@@ -59,6 +60,32 @@ dt[, user_rating_count := min(user_rating_count), by=list(user_id, rating_date)]
 setkey(dt, movie_id, rating_date)
 dt[, movie_rating_count := 1:.N - 1, by=movie_id]
 dt[, movie_rating_count := min(movie_rating_count), by=list(movie_id, rating_date)]
+
+# export ratings s.t. user rating count > N, movie rating count > M
+min.rating.params <- CJ(min.urc=c(0, 100),
+                        min.mrc=c(0,1000))
+for(i in 1:nrow(min.rating.params)) {
+    print(min.rating.params[i])
+
+    min.urc <- min.rating.params[i, min.urc]
+    min.mrc <- min.rating.params[i, min.mrc]
+    cat('subset ')
+    good.ratings <- dt[user_rating_count >= min.urc &
+                       movie_rating_count > min.mrc]
+    cat('done\n')
+
+    # collapse to aggregate rmse
+    cat('collapse ')
+    good.ratings <- good.ratings[, list(predicted=mean(predicted, na.rm=TRUE),
+                                        rmse=sqrt(sum(residual^2, na.rm=TRUE) / .N)),
+                                 by=movie_id]
+    cat('done\n')
+
+    out.path <- paste0('out/',d,'/rsync/movie-rmse-u',min.urc,'-m',min.mrc) 
+    saveRDS(good.ratings, paste0(out.path,'.Rds'))
+    write.dta(good.ratings, paste0(out.path,'.dta'))
+}
+
 
 # things needed to characterize the variance
 dt[, md_block_start := min(.I), by=list(movie_id, rating_date)]
