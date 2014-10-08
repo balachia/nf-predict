@@ -8,8 +8,9 @@ library(parallel)
 rm(list=ls())
 options(max.print=5000)
 
-readMM.dense <- function(fin, skip=3, ...) {
+readMM.dense <- function(fin, skip=3, keep=NULL, ...) {
     dt <- fread(fin, skip=skip, ...)
+    if(!is.null(keep)) dt <- dt[, keep, with=FALSE]
     as.matrix(dt)
 }
 
@@ -45,9 +46,9 @@ resdts <- mclapply(12:84, mc.cores=20, function(ipred) {
     # load data
     mu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_global_mean.mm'))
     bi <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_V_bias.mm'))
-    qi <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_V.mm'))
+    qi <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_V.mm'), keep=1:d)
     bu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_U_bias.mm'))
-    pwu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_U.mm'))
+    pwu <- readMM.dense(paste0('out/',d,'/',i,'/all-nf-',i,'.mm_U.mm'), keep=1:(2*d))
 
     # drop last column and reformat
     mu <- mu[1]
